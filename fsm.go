@@ -38,23 +38,32 @@ type FSMTransition struct {
 	Action string
 }
 
-type FSM struct {
-	id                 uint32
-	state              string
-	oldStates          []string
-	mapName2State      map[string]FSMState
-	mapName2Action     map[string]FSMAction
-	mapName2transition map[string]*FSMTransition
+func NewFSMTransition(from string, evt string, to string, action string) *FSMTransition {
+	return &FSMTransition{
+		From:   from,
+		Event:  evt,
+		To:     to,
+		Action: action,
+	}
 }
 
-func NewFSM(id uint32, firstState string) *FSM {
+type FSM struct {
+	id             uint32
+	state          string
+	oldStates      []string
+	mapName2State  map[string]FSMState
+	mapName2Action map[string]FSMAction
+	transitions    []*FSMTransition
+}
+
+func NewFSM(id uint32) *FSM {
 	return &FSM{
-		id:                 id,
-		state:              firstState,
-		oldStates:          make([]string, 0),
-		mapName2State:      make(map[string]FSMState),
-		mapName2Action:     make(map[string]FSMAction),
-		mapName2transition: make(map[string]*FSMTransition),
+		id:             id,
+		state:          "",
+		oldStates:      make([]string, 0),
+		mapName2State:  make(map[string]FSMState),
+		mapName2Action: make(map[string]FSMAction),
+		transitions:    make([]*FSMTransition, 0),
 	}
 }
 
@@ -116,29 +125,81 @@ func (f *FSM) GetAction(name string) (FSMAction, bool) {
 	return act, ok
 }
 
-func (f *FSM) AddTransition(name string, tran *FSMTransition) error {
-	if len(name) == 0 {
-		return ErrNameLenZero
+func (f *FSM) AddTransition(from string, evt string, to string, action string) error {
+	if len(from) == 0 {
+		return ErrFromStatNotExist
 	}
 
-	if tran == nil {
-		return ErrTranNil
+	if len(evt) == 0 {
+		return ErrEvtEmpty
 	}
 
-	f.mapName2transition[name] = tran
+	if len(to) == 0 {
+		return ErrToStatNotExist
+	}
+
+	tran := NewFSMTransition(from, evt, to, action)
+	f.transitions = append(f.transitions, tran)
 	return nil
 }
 
-func (f *FSM) RemoveTransition(name string) {
-	_, ok := f.mapName2transition[name]
-	if ok {
-		delete(f.mapName2transition, name)
+func (f *FSM) RemoveTransition(from string, evt string) {
+	if len(from) == 0 {
+		return
+	}
+
+	if len(evt) == 0 {
+		return
+	}
+
+	for i, tran := range f.transitions {
+		if tran.From == from && tran.Event == evt {
+			f.transitions = append(f.transitions[:i], f.transitions[i+1:]...)
+			break
+		}
 	}
 }
 
-func (f *FSM) GetTransition(name string) (*FSMTransition, bool) {
-	tran, ok := f.mapName2transition[name]
-	return tran, ok
+func (f *FSM) GetTransition(from string, evt string) (*FSMTransition, bool) {
+	if len(from) == 0 {
+		return nil, false
+	}
+
+	if len(evt) == 0 {
+		return nil, false
+	}
+
+	for _, tran := range f.transitions {
+		if tran.From == from && tran.Event == evt {
+			return tran, true
+		}
+	}
+
+	return nil, false
+}
+
+func (f *FSM) Start(firstState string) error {
+	if len(firstState) == 0 {
+		return ErrNoFirstStat
+	}
+
+	stat, ok := f.GetState(firstState)
+	if ok {
+		f.state = firstState
+		stat.OnEnter("")
+	}
+	return nil
+}
+
+func (f *FSM) Stop() {
+	if len(f.state) == 0 {
+		return
+	}
+
+	stat, ok := f.GetState(f.state)
+	if ok {
+		stat.OnExit("")
+	}
 }
 
 func (f *FSM) Update(dt int64) {
@@ -157,16 +218,8 @@ func (f *FSM) Trigger(evt string, param ...interface{}) error {
 		return ErrNoFirstStat
 	}
 
-	// find transition
-	var triggerTran *FSMTransition = nil
-	for _, tran := range f.mapName2transition {
-		if tran.From == f.state && tran.Event == evt {
-			triggerTran = tran
-			break
-		}
-	}
-
-	if triggerTran == nil {
+	triggerTran, ok := f.GetTransition(f.state, evt)
+	if !ok {
 		return ErrTranNotExist
 	}
 

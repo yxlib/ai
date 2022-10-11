@@ -140,7 +140,7 @@ type BaseAgent struct {
 func NewBaseAgent(agentId uint32) *BaseAgent {
 	return &BaseAgent{
 		agentId:               agentId,
-		fsm:                   NewFSM(agentId, AGENT_STATE_IDLE),
+		fsm:                   NewFSM(agentId),
 		mapState2BTree:        make(map[string]*BehaviorTree),
 		mapState2EnterFunc:    make(map[string]AgentFsmStateEnterFunc),
 		mapState2UpdateFunc:   make(map[string]AgentFsmStateUpdateFunc),
@@ -154,8 +154,24 @@ func (a *BaseAgent) GetID() uint32 {
 	return a.agentId
 }
 
+func (a *BaseAgent) Start(firstState string) error {
+	return a.fsm.Start(firstState)
+}
+
+func (a *BaseAgent) Stop() {
+	a.fsm.Stop()
+}
+
 func (a *BaseAgent) Update(dt int64) {
 	a.fsm.Update(dt)
+}
+
+func (a *BaseAgent) Trigger(evt string, param ...interface{}) error {
+	return a.fsm.Trigger(evt, param...)
+}
+
+func (a *BaseAgent) PopState() error {
+	return a.fsm.PopState()
 }
 
 func (a *BaseAgent) AddState(name string, behaviorTree *BehaviorTree, enterFunc AgentFsmStateEnterFunc, updateFunc AgentFsmStateUpdateFunc, exitFunc AgentFsmStateExitFunc) error {
@@ -226,21 +242,12 @@ func (a *BaseAgent) RemoveAction(name string) error {
 	return nil
 }
 
-func (a *BaseAgent) AddTransition(name string, tran *FSMTransition) error {
-	if len(name) == 0 {
-		return errors.New("action is nil")
-	}
-
-	return a.fsm.AddTransition(name, tran)
+func (a *BaseAgent) AddTransition(from string, evt string, to string, action string) error {
+	return a.fsm.AddTransition(from, evt, to, action)
 }
 
-func (a *BaseAgent) RemoveTransition(name string) error {
-	if len(name) == 0 {
-		return errors.New("action is nil")
-	}
-
-	a.fsm.RemoveTransition(name)
-	return nil
+func (a *BaseAgent) RemoveTransition(from string, evt string) {
+	a.fsm.RemoveTransition(from, evt)
 }
 
 func (a *BaseAgent) AddBNodeActionHandleFunc(actionId uint32, handleFunc AgentBNodeActionFunc) error {
